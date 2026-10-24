@@ -80,8 +80,9 @@ CUBRID_VERSION=11.4 docker compose up -d
 python scripts/wait_for_cubrid.py
 ```
 
-`docker compose up -d` starts a container named `cubrid-cookbook` from
-`docker-compose.yml` and returns at once; the database needs a few more
+`docker compose up -d` starts the `cubrid` service from `docker-compose.yml`
+(its container is named after the folder, for example
+`cubrid-cookbook-python-cubrid-1`) and returns at once; the database needs a few more
 seconds to start. The second command waits for that.
 
 **Checkpoint.** The last line must be:
@@ -90,7 +91,7 @@ seconds to start. The second command waits for that.
 CUBRID is ready: the in-container csql query passed.
 ```
 
-`docker compose ps` should then list `cubrid-cookbook` with
+`docker compose ps` should then list the `cubrid` service with
 `127.0.0.1:33000->33000/tcp`. Its status may still read `health: starting`
 for up to 30 seconds after the database answers; that is normal.
 

@@ -7,41 +7,60 @@ New to CUBRID? Start with the beginner tutorial, [your first CUBRID database fro
 ## 0. Start CUBRID (all paths)
 
 ```bash
-docker compose up -d        # CUBRID 11.2 on localhost:33000, database testdb
+make docker-up              # CUBRID 11.2 on 127.0.0.1:33000, database testdb; waits until it answers
 ```
 
-Readiness takes up to a minute on first start:
+`make docker-up` runs `docker compose up -d` for the root `docker-compose.yml`
+service `cubrid` and then waits (up to 120 seconds) until `testdb` answers a
+query inside the container. Without `make`, run `docker compose up -d` and check
+readiness yourself; it takes up to a minute on first start:
 
 ```bash
-docker exec cubrid-cookbook bash -lc "csql -u dba testdb -c 'SELECT 1;'"
+docker compose exec cubrid csql -u dba testdb -c 'SELECT 1'
 ```
 
-### A lab created before the October 2026 lab fix
+The Docker lifecycle has three commands:
 
-`docker-compose.yml` now keeps the database in named volumes and gives the
-container a fixed host name (#385). A lab started from the earlier file breaks
-the first time the new file recreates its container: CUBRID records the old
-container's host name, so the database fails to open (`-353 Failed to connect
-to database server`). Your data is still there. Recover it as follows, from the
-repository folder. **Do not run `docker compose down -v`, which deletes the
-data**; if the lab holds anything you need, copy it out first.
+| Command | What it does | Database data |
+|---|---|---|
+| `make docker-up` | starts the lab (`CUBRID_VERSION=11.4` selects another image) | kept from the last run |
+| `make docker-down` | stops and removes the container and network | **kept** in the named volumes |
+| `make docker-clean` | removes the container, network and volumes | **deleted** |
 
-If you started the lab without `CUBRID_VERSION` (CUBRID 11.2, the default),
-point the database at the new host name and restart:
+`make up` and `make down` are aliases of `make docker-up` and `make docker-down`.
+The broker listens on `127.0.0.1` only. `CUBRID_TEST_PORT=<port>` publishes it on
+another host port, for example for a second lab under its own
+`COMPOSE_PROJECT_NAME`, but the examples and `make verify` expect the lab on `33000`.
+
+### A lab created before the October 2026 lab changes
+
+`docker-compose.yml` keeps the database in named volumes and registers it for
+the host `localhost` (`CUBRID_DB_HOST`), so any new container opens it
+(#385, #436). A lab started from an earlier file breaks the first time the new file
+recreates its container: CUBRID recorded the old container's host name
+(`cubrid-cookbook` or a random container ID), so the database fails to open
+(`-353 Failed to connect to database server`). Your data is still there. Recover
+it as follows, from the repository folder. **Do not run `make docker-clean` or
+`docker compose down -v`, which delete the data**; if the lab holds anything you
+need, copy it out first.
+
+If its database is already in the named volumes (any CUBRID 11.2 lab, or an 11.4
+lab started after #385), point the database at `localhost` and restart. Add
+`CUBRID_VERSION=11.4` to the first command for an 11.4 lab:
 
 ```bash
 docker compose up -d
-docker compose exec -T -u cubrid cubrid sh -c 'sed -i -E "s/^(testdb[[:space:]]+[^[:space:]]+[[:space:]]+)[^[:space:]]+/\1cubrid-cookbook/" "$CUBRID_DATABASES/databases.txt"'
+docker compose exec -T -u cubrid cubrid sh -c 'sed -i -E "s/^(testdb[[:space:]]+[^[:space:]]+[[:space:]]+)[^[:space:]]+/\1localhost/" "$CUBRID_DATABASES/databases.txt"'
 docker compose restart cubrid
 python3 scripts/wait_for_cubrid.py
 ```
 
-If you started it with `CUBRID_VERSION=11.4`, its database sits in a volume
-without a name. Before you update the repository, note that volume and stop
-the lab:
+If you started an 11.4 lab with `CUBRID_VERSION=11.4` before #385, its database
+sits in a volume without a name. Before you update the repository, note that
+volume and stop the lab:
 
 ```bash
-OLD=$(docker inspect cubrid-cookbook --format '{{range .Mounts}}{{if eq .Destination "/home/cubrid/CUBRID/databases"}}{{.Name}}{{end}}{{end}}')
+OLD=$(docker inspect "$(docker compose ps -aq cubrid)" --format '{{range .Mounts}}{{if eq .Destination "/home/cubrid/CUBRID/databases"}}{{.Name}}{{end}}{{end}}')
 docker compose stop
 ```
 
@@ -50,8 +69,8 @@ volume, fix its host name and start the lab:
 
 ```bash
 CUBRID_VERSION=11.4 docker compose create
-NEW=$(docker inspect cubrid-cookbook --format '{{range .Mounts}}{{if eq .Destination "/home/cubrid/CUBRID/databases"}}{{.Name}}{{end}}{{end}}')
-docker run --rm -v "$OLD":/from:ro -v "$NEW":/to --entrypoint sh cubrid/cubrid:11.4 -c 'cp -a /from/. /to/ && sed -i -E "s/^(testdb[[:space:]]+[^[:space:]]+[[:space:]]+)[^[:space:]]+/\1cubrid-cookbook/" /to/databases.txt && chown cubrid:cubrid /to/databases.txt'
+NEW=$(docker inspect "$(docker compose ps -aq cubrid)" --format '{{range .Mounts}}{{if eq .Destination "/home/cubrid/CUBRID/databases"}}{{.Name}}{{end}}{{end}}')
+docker run --rm -v "$OLD":/from:ro -v "$NEW":/to --entrypoint sh cubrid/cubrid:11.4 -c 'cp -a /from/. /to/ && sed -i -E "s/^(testdb[[:space:]]+[^[:space:]]+[[:space:]]+)[^[:space:]]+/\1localhost/" /to/databases.txt && chown cubrid:cubrid /to/databases.txt'
 CUBRID_VERSION=11.4 docker compose up -d
 python3 scripts/wait_for_cubrid.py
 ```
@@ -102,13 +121,13 @@ Use a Python 3.11+ virtual environment:
 python3 -m venv .venv && source .venv/bin/activate   # Python 3.11 or later
 make deps                     # drivers, pytest and every example's requirements
 make test                     # unit and mocked tests: no database, no Docker
-make up                       # start CUBRID and wait until it is ready
+make docker-up                # start CUBRID and wait until it is ready
 make verify-goldens           # runs every golden-backed example against your local CUBRID
 ```
 
 `make deps` installs everything in one pip call and honours `PIP_CONSTRAINT`. `make verify-goldens` stops early with "run `make deps` first" when an example requirement is missing, limits each script to `VERIFY_TIMEOUT` seconds (default 60), and reports each result as pass, mismatch, exec error, timeout, normalizer/read error or skip.
 
-`make verify` is the full live verification: every golden plus the FastAPI quickstart, Flask/FastAPI, Django/Celery, Streamlit, AI agent/MCP/RAG, migration and performance suites. Besides the `make up` database it needs two dedicated, empty CUBRID databases in `CUBRID_TEST_URL` and `CUBRID_DASHBOARD_TEST_URL`, fails if anything is unreachable, skipped or missing, and writes its results to `.live-evidence/`. [CONTRIBUTING.md](CONTRIBUTING.md#live-verification) shows how to start them and how to run a single suite (`make verify-web`, `make verify-ai-agent`, …).
+`make verify` is the full live verification: every golden plus the FastAPI quickstart, Flask/FastAPI, Django/Celery, Streamlit, AI agent/MCP/RAG, migration and performance suites. Besides the `make docker-up` database it needs two dedicated, empty CUBRID databases in `CUBRID_TEST_URL` and `CUBRID_DASHBOARD_TEST_URL`, fails if anything is unreachable, skipped or missing, and writes its results to `.live-evidence/`. [CONTRIBUTING.md](CONTRIBUTING.md#live-verification) shows how to start them and how to run a single suite (`make verify-web`, `make verify-ai-agent`, …).
 
 ## Where to go next
 
@@ -116,6 +135,7 @@ make verify-goldens           # runs every golden-backed example against your lo
 |---|---|
 | Copy-and-customize starters | `templates/` |
 | JDBC-to-Python migration | `migration/java-to-python/` |
+| CUBRIDdb-to-pycubrid driver migration | `migration/cubriddb-to-pycubrid/` |
 | Performance patterns | `performance/` |
 | Known CUBRID quirks | `pitfalls/`, `KNOWN_ISSUES.md` |
 | Supported versions | `SUPPORT_MATRIX.md` |

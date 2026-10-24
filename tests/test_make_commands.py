@@ -141,6 +141,35 @@ class VerifyCommandTests(OrphanChecks):
         for label, value in defaults.items():
             self.assertIn(f"{value} {label}", summary, result.stdout)
 
+    def test_scoped_run_ends_with_a_partial_line_naming_the_roots(self) -> None:
+        # #460: a passing scoped check must never read like the full verification.
+        self.example("first")
+        self.example("second")
+        for paths in ("first", "first second", None):
+            with self.subTest(paths=paths):
+                result = self.verify(paths)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                lines = [x for x in result.stdout.splitlines() if x.startswith("PARTIAL")]
+                self.assertEqual(len(lines), 1, result.stdout)
+                self.assertIn(f"under: {paths or '.'}", lines[0])
+                self.assertIn("not the full verification", lines[0])
+                self.assertEqual(result.stdout.splitlines()[-1], lines[0])
+
+    def test_partial_line_is_dropped_only_for_the_goldens_part_of_the_full_run(self) -> None:
+        self.example()
+        result = self.verify(env={**os.environ, "VERIFY_SCOPE": "full"})
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn("PARTIAL", result.stdout)
+        # Any other value, including an ambient one, keeps the label.
+        result = self.verify(env={**os.environ, "VERIFY_SCOPE": "yes"})
+        self.assertIn("PARTIAL", result.stdout)
+
+    def test_partial_line_follows_a_failed_scoped_run_too(self) -> None:
+        self.example(code="print('different')")
+        result = self.verify("recipes")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("PARTIAL: checked only the goldens under: recipes", result.stdout)
+
     def test_missing_root_fails(self) -> None:
         self.assertNotEqual(self.verify("missing").returncode, 0)
 
@@ -711,9 +740,52 @@ class MakeTargetSemanticsTests(unittest.TestCase):
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
         self.assertEqual(makefile.count("down -v"), 1)
         self.assertIn("down -v", make_rule("docker-clean"))
-        # up and down keep their names and down keeps the data.
+        # #436: docker-down keeps the data; up and down stay as aliases.
+        self.assertEqual(make_dry_run("docker-down"), ["docker compose down"])
         self.assertEqual(make_dry_run("down"), ["docker compose down"])
-        self.assertEqual(make_dry_run("up")[0], "docker compose up -d")
+        self.assertEqual(make_dry_run("docker-up")[0], "docker compose up -d")
+        self.assertEqual(make_dry_run("up"), make_dry_run("docker-up"))
+
+    def test_up_and_down_are_recipe_less_aliases_of_the_docker_targets(self) -> None:
+        for alias, target in (("up", "docker-up"), ("down", "docker-down")):
+            with self.subTest(alias=alias):
+                rule = make_rule(alias)
+                self.assertTrue(rule.startswith(f"{alias}: {target} ##"), rule)
+                self.assertEqual(len(rule.splitlines()), 1, rule)
+
+    def test_docker_lifecycle_runs_compose_and_only_docker_clean_deletes_volumes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            calls = root / "docker-calls"
+            binaries = root / "bin"
+            binaries.mkdir()
+            fake = binaries / "docker"
+            fake.write_text(f'#!/bin/sh\necho "$*" >> {calls}\n', encoding="utf-8")
+            fake.chmod(0o755)
+            env = {**os.environ, "PATH": f"{binaries}{os.pathsep}{os.environ['PATH']}"}
+            ran: dict[str, list[str]] = {}
+            for target in ("docker-up", "docker-down", "docker-clean", "up", "down"):
+                calls.unlink(missing_ok=True)
+                result = subprocess.run(
+                    ["make", "--no-print-directory", "-f", str(ROOT / "Makefile"), target]
+                    + [f"PYTHON={sys.executable}", "UP_TIMEOUT=5"],
+                    cwd=ROOT,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                ran[target] = calls.read_text(encoding="utf-8").splitlines()
+        # The readiness probe addresses the Compose service, never a container name.
+        self.assertEqual(
+            ran["docker-up"],
+            ["compose up -d", "compose exec -T cubrid csql -u dba testdb -c SELECT 1"],
+        )
+        self.assertEqual(ran["docker-down"], ["compose down"])
+        self.assertEqual(ran["docker-clean"], ["compose down -v"])
+        self.assertEqual(ran["up"], ran["docker-up"])
+        self.assertEqual(ran["down"], ran["docker-down"])
 
     def test_test_recipe_is_one_runner_invocation_that_includes_test_normalize(self) -> None:
         for target in ("test", "test-offline"):
@@ -753,11 +825,12 @@ class MakeTargetSemanticsTests(unittest.TestCase):
 
         stderr = io.StringIO()
         with (
+            tempfile.TemporaryDirectory() as results,
             mock.patch.object(module.subprocess, "run", fake_run),
             contextlib.redirect_stdout(io.StringIO()),
             contextlib.redirect_stderr(stderr),
         ):
-            self.assertEqual(module.main([]), 1)
+            self.assertEqual(module.main(["--results-dir", str(Path(results) / "t")]), 1)
         self.assertEqual(len(ran), 2)
         self.assertIn("FAILED (exit 3)", stderr.getvalue())
 
@@ -831,6 +904,63 @@ class MakeTargetSemanticsTests(unittest.TestCase):
             groups, ("docker-clean", "test-offline", "verify-goldens", "format-check", "docs-check")
         ):
             self.assertLess(text.index(group), text.index(target))
+
+
+class ComposeContractTests(unittest.TestCase):
+    """#436: the root lab is the Compose service cubrid, database testdb, on 127.0.0.1."""
+
+    compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+
+    def test_one_service_named_cubrid_with_testdb_and_a_version_override(self) -> None:
+        services = self.compose.split("services:\n", 1)[1].split("\nvolumes:\n", 1)[0]
+        names = [
+            line.strip()
+            for line in services.splitlines()
+            if line.startswith("  ") and not line.startswith("   ")
+        ]
+        self.assertEqual(names, ["cubrid:"])
+        self.assertIn("    image: cubrid/cubrid:${CUBRID_VERSION:-11.2}\n", self.compose)
+        self.assertIn("      CUBRID_DB: testdb\n", self.compose)
+        self.assertIn(
+            '      test: ["CMD", "csql", "-u", "dba", "testdb", "-c", "SELECT 1"]\n', self.compose
+        )
+
+    def test_broker_binds_localhost_on_cubrid_test_port(self) -> None:
+        ports = self.compose.split("    ports:\n", 1)[1].split("    environment:\n", 1)[0]
+        published = [line.strip() for line in ports.splitlines() if line.strip().startswith("- ")]
+        self.assertEqual(published, ['- "127.0.0.1:${CUBRID_TEST_PORT:-33000}:33000"'])
+
+    def test_database_host_is_localhost_not_a_fixed_container_identity(self) -> None:
+        self.assertIn("      CUBRID_DB_HOST: localhost\n", self.compose)
+        for key in ("container_name:", "hostname:"):
+            with self.subTest(key=key):
+                self.assertNotRegex(self.compose, rf"(?m)^\s+{key}")
+
+    def test_named_volumes_keep_both_database_paths(self) -> None:
+        self.assertIn("      - cubrid_data:/var/lib/cubrid\n", self.compose)
+        self.assertIn("      - cubrid_databases:/home/cubrid/CUBRID/databases\n", self.compose)
+        self.assertTrue(self.compose.endswith("volumes:\n  cubrid_data:\n  cubrid_databases:\n"))
+
+    def test_no_tracked_file_addresses_the_old_fixed_container_name(self) -> None:
+        tracked = subprocess.run(
+            ["git", "ls-files", "-z"], cwd=ROOT, capture_output=True, text=True, timeout=30
+        )
+        self.assertEqual(tracked.returncode, 0, tracked.stderr)
+        # Built here so this file does not match itself.
+        container = "cubrid-" + "cookbook"
+        patterns = [f"docker {verb} {container}" for verb in ("exec", "inspect", "logs")]
+        offenders = []
+        for name in tracked.stdout.split("\0"):
+            if not name or name == "CHANGELOG.md" or name.startswith("agent-evals/tasks/"):
+                continue
+            try:
+                text = (ROOT / name).read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                continue
+            for pattern in patterns:
+                if pattern in text:
+                    offenders.append(f"{name}: {pattern}")
+        self.assertEqual(offenders, [])
 
 
 class OfflineWorkflowTests(unittest.TestCase):

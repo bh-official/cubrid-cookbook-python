@@ -66,13 +66,20 @@ quickstart and AI-agent tests, release dependency guards, workflow guards and fa
 Make/Compose regression tests. The suite list lives in
 `scripts/run_offline_tests.py`, and each suite runs in its own process to avoid
 conflicting recipe module names.
+`make test` also writes `test-results/test/` (ignored by git, removed by `make clean`, #461):
+one JUnit file per suite in `junit/` and `summary.json` with the schema version, the
+overall status (`PASS`, `FAIL` or `INCOMPLETE`), per-suite and total counts and the
+suites not run after a failure; the last console line repeats the same status and
+counts. Coverage is not measured, so `summary.json` says `"coverage": {"measured": false}`
+and no `coverage.xml` is written. A failing suite still stops the run and exits 1.
 These checks require no database and do not prove live CUBRID compatibility;
 run the relevant example, a `make verify-*` lane or the full `make verify` against
 CUBRID for that evidence (see [Live verification](#live-verification)).
 `make clean` removes generated files, caches and test results (`.live-evidence/`,
-`__pycache__`, `.pytest_cache`, `.ruff_cache`, the staged docs pages and `site/`)
-and never touches Docker; `make down` stops the lab and keeps its data, and only
-`make docker-clean` deletes the lab's containers and volumes, database data included.
+`test-results/`, `__pycache__`, `.pytest_cache`, `.ruff_cache`, the staged docs pages and `site/`)
+and never touches Docker; `make docker-down` (alias `make down`) stops the lab and keeps
+its data, and only `make docker-clean` deletes the lab's containers and volumes, database
+data included (see [Running Examples](#running-examples)).
 CI runs the same `make check test` command on every pull request (see
 [CI tiers](#ci-tiers) for which live lanes run on top of it). The blocking
 documentation check has its own pinned tools; run it with
@@ -149,9 +156,9 @@ process) against real CUBRID databases, fails closed, and records what ran (#416
 
 | Lane (`make` target) | What runs | Database |
 |----------------------|-----------|----------|
-| goldens (`verify-goldens`) | every `expected/*.expected` golden, see [Golden Verification](#golden-verification) | the `make up` database |
-| `verify-quickstart` | `quickstart/5min-fastapi/tests/test_live.py`: `/health` and CRUD (#420) | the `make up` database (the app connects to port 33000 and `testdb` only); it keeps its own `cookbook_quickstart_items` table |
-| `verify-performance` | `tests/test_performance_benchmarks.py`: the five migration goldens and the three benchmarks (#423), see [Performance and migration lane](#performance-and-migration-lane) | the `make up` database (the scripts hard-code it) |
+| goldens (`verify-goldens`) | every `expected/*.expected` golden, see [Golden Verification](#golden-verification) | the `make docker-up` database |
+| `verify-quickstart` | `quickstart/5min-fastapi/tests/test_live.py`: `/health` and CRUD (#420) | the `make docker-up` database (the app connects to port 33000 and `testdb` only); it keeps its own `cookbook_quickstart_items` table |
+| `verify-performance` | `tests/test_performance_benchmarks.py`: the five migration goldens and the three benchmarks (#423), see [Performance and migration lane](#performance-and-migration-lane) | the `make docker-up` database (the scripts hard-code it) |
 | `verify-web` | `templates/flask/*/tests`, `templates/api-service-fastapi/recipes/*/tests`; `templates/api-service-fastapi/tests` (root template startup and `/health`) | `CUBRID_TEST_URL`; the root template test uses SQLite by design and is reported as startup-only, not live evidence or quickstart coverage |
 | `verify-django-celery` | `templates/django/tests`, `templates/async-worker/tests` | `CUBRID_TEST_URL`; Celery tasks run directly (`.run()` / eager `.apply()`), without Redis or a worker |
 | `verify-ai-agent` | `tests/test_ai_agent.py`: agent state, MCP tools and RAG, each script run twice (#422) | `CUBRID_TEST_URL` |
@@ -160,14 +167,14 @@ process) against real CUBRID databases, fails closed, and records what ran (#416
 `make verify` runs the lanes in this order, one at a time, so suites with fixed
 table names never overlap; `make verify-templates` runs `verify-web`,
 `verify-django-celery` and `verify-dashboard`. Each lane can also run on its own.
-The goldens leave their fixed tables in the `make up` database, so
+The goldens leave their fixed tables in the `make docker-up` database, so
 `CUBRID_TEST_URL` and `CUBRID_DASHBOARD_TEST_URL` must name two further dedicated,
-empty databases, distinct from each other and from the `make up` database:
+empty databases, distinct from each other and from the `make docker-up` database:
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate   # Python 3.11 or later
 make deps        # every example's requirements.txt, in one pip call
-make up          # the examples' database on localhost:33000
+make docker-up   # the examples' database on localhost:33000
 # Two disposable CUBRID containers for the dedicated databases (never your lab container)
 docker run -d --name cubrid-verify -p 127.0.0.1:33005:33000 -e CUBRID_DB=testdb cubrid/cubrid:11.2
 docker run -d --name cubrid-verify-dashboard -p 127.0.0.1:33006:33000 -e CUBRID_DB=testdb cubrid/cubrid:11.2
@@ -186,8 +193,8 @@ empty/`0`/`false`/`no`/`off` disable it, any other value is a usage error). Unde
 the gate a lane fails, with a nonzero exit, when:
 
 - a URL it needs is missing, unreachable or not `cubrid+pycubrid://` (no SQLite
-  fallback), names the `make up` database, or the dashboard URL names the same
-  database as `CUBRID_TEST_URL`; or the `make up` database is unreachable;
+  fallback), names the `make docker-up` database, or the dashboard URL names the same
+  database as `CUBRID_TEST_URL`; or the `make docker-up` database is unreachable;
 - a dedicated database already holds any `cookbook_*` table before the lane: the
   suites drop and recreate their own tables, so use a dedicated, empty database;
 - any suite fails, collects no test or skips a test, or a suite whose conftest prints a
@@ -217,6 +224,17 @@ interpreter that runs pytest (`PYTHON`), the CUBRID server versions and the
 selected/passed/failed/skipped counts and case outcomes per suite. `make verify` also
 writes `.live-evidence/verify-summary.json` and `verify-summary.txt`, which report the
 golden comparisons and the pytest lanes separately and name every failed golden.
+
+Only a complete `make verify` run reports the full verification. Every other run is
+labeled `PARTIAL` (#460): `make verify-goldens` (whether scoped by `VERIFY_PATHS` or
+not) ends its output with a `PARTIAL: checked only the goldens under: <roots>` line,
+and a focused lane (`make verify-quickstart`, `verify-web`, ..., or
+`scripts/live_gate.py <lane>`) prints `PARTIAL: checked only the <lanes> lane(s)`,
+repeats it in that lane's `summary.txt` and records `"partial": true` in its
+`summary.json`. The lanes that `make verify` itself runs and its
+`verify-summary.json` record `"partial": false`. A `PASS` or `Results:` line from a
+partial run therefore never means the full verification passed; the label does not
+change which goldens or suites run.
 
 `make verify` is always the full verification: an exported `VERIFY_PATHS` does not
 narrow it, and `make verify VERIFY_PATHS=<dirs>` on the command line fails with a
@@ -391,7 +409,7 @@ not allowlisted, or when `CI Gate` loses `if: always()` or its short timeout.
 quickstart/          # 5-minute getting-started examples
 fundamentals/        # Core CUBRID operations with Python
 templates/           # Production-ready application templates
-migration/           # Language migration guides (Java → Python)
+migration/           # Migration guides (Java → Python, CUBRIDdb → pycubrid)
 performance/         # Benchmark-backed optimization patterns
 pitfalls/            # Common mistakes and fixes
 docs/                # Internal docs (PRD, agent playbook)
@@ -401,7 +419,7 @@ docs/                # Internal docs (PRD, agent playbook)
 
 ```bash
 # Start CUBRID
-make up
+make docker-up
 
 # Example: run a FastAPI template
 cd templates/api-service-fastapi/recipes/01-basic-crud
@@ -413,17 +431,37 @@ cd ../../../..
 python fundamentals/pycubrid/01_connect.py
 ```
 
-`make up` starts Compose, then waits up to 120 seconds for the existing
+The root `docker-compose.yml` defines one service, `cubrid` (database `testdb`,
+image `cubrid/cubrid:${CUBRID_VERSION:-11.2}`). It has no fixed container name or
+host name: `CUBRID_DB_HOST: localhost` registers the database for `localhost`, so a
+container recreated by `docker compose down` and `up` opens the database kept in the
+named volumes. The broker is published on `127.0.0.1` only, because the lab's `dba`
+account has no password.
+
+The Docker lifecycle is `make docker-up`, `make docker-down` and `make docker-clean`;
+`make up` and `make down` are aliases of the first two, and `make status` runs
+`docker compose ps`. `make docker-down` removes the containers and the network and
+keeps the volumes; `make docker-clean` also deletes the volumes, database data
+included.
+
+`make docker-up` starts Compose, then waits up to 120 seconds for the existing
 in-container `csql` query to succeed. Each probe and failure diagnostic has a
 5-second limit. To adjust these waits, use `UP_TIMEOUT`, `UP_PROBE_TIMEOUT`, and
-`UP_INTERVAL`, for example `make up UP_TIMEOUT=180`. Image pull/start time occurs
+`UP_INTERVAL`, for example `make docker-up UP_TIMEOUT=180`. Image pull/start time occurs
 before the readiness deadline. This query checks the database inside the
 container; it does not verify the driver's CAS connection. On failure the
 command exits nonzero and prints bounded Compose status/log diagnostics, leaving
 the containers and data available for inspection.
 
+`CUBRID_TEST_PORT` publishes the broker on another host port (default `33000`), for
+example `CUBRID_TEST_PORT=33005 COMPOSE_PROJECT_NAME=cookbook-verify make docker-up`
+for a second lab next to the default one. The examples, their goldens and the
+`make verify` lanes that use the examples database connect to `localhost:33000`, so
+run them against a lab on the default port; a lab on another port is reachable only
+through a URL such as `CUBRID_TEST_URL`.
+
 The root Compose image defaults to CUBRID 11.2. Select another version without
-editing the file: `make down`, then `CUBRID_VERSION=11.4 make up` (combine with
+editing the file: `make docker-down`, then `CUBRID_VERSION=11.4 make docker-up` (combine with
 `UP_TIMEOUT=180` if needed). These commands retain the existing volume; changing
 the server image is not a database-format upgrade. Use fresh, isolated test data
 when switching incompatible versions, and never delete existing data implicitly.
@@ -447,7 +485,7 @@ or skips. Ordinary recipe failures are collected so the remaining selected
 recipes still produce diagnostics.
 
 To reproduce it from a clean checkout, use a Python 3.11+ virtual environment and
-run `make up`, `make deps`, `make verify-goldens`. `make deps` installs `pytest`,
+run `make docker-up`, `make deps`, `make verify-goldens`. `make deps` installs `pytest`,
 `pytest-asyncio`, `sqlalchemy-cubrid[pycubrid]` and the `requirements.txt` of every example (the
 golden-backed ones and those of the live suites, `scripts/example_requirements.py
 --all`) in one pip resolver call, so `PIP_CONSTRAINT` applies to all of them. The
@@ -478,7 +516,7 @@ summary counts each class. Under GitHub Actions each failure also emits an
 
 `make verify-performance` (also part of `make verify`) runs
 `tests/test_performance_benchmarks.py` against the database
-the examples hard-code (`localhost:33000`, `testdb`, `dba`; `make up` and
+the examples hard-code (`localhost:33000`, `testdb`, `dba`; `make docker-up` and
 `make deps` first) and writes a JUnit report and a summary to `.live-evidence/performance/`
 (ignored by git). It has two groups, reported as separate JUnit classes:
 `TestMigrationGoldens` runs the five `migration/java-to-python` goldens with the
@@ -531,7 +569,7 @@ also installed and run: the `Driver floors (CUBRID 11.4)` CI lane
 (`scripts/driver_floors.py`, see [CI tiers](#ci-tiers)) installs each floor with
 `==` and runs representative goldens; a new directory-specific floor must be
 added to a floor set there, or `tests/test_dependency_floors.py` fails. Run it
-locally against `make up` with `python scripts/driver_floors.py run`.
+locally against `make docker-up` with `python scripts/driver_floors.py run`.
 
 #### Release smoke dependencies
 

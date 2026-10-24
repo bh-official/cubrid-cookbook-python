@@ -155,7 +155,7 @@ def live_db(record_testsuite_property, pytestconfig) -> LiveDB:
     try:
         server = db.query("SELECT VERSION()")[0][0]
     except Exception as exc:  # any connect failure means "no database"
-        _unavailable(f"no CUBRID at {endpoint} ({type(exc).__name__}: {exc}); run make up")
+        _unavailable(f"no CUBRID at {endpoint} ({type(exc).__name__}: {exc}); run make docker-up")
     versions = {
         "cubrid_server": server,
         "cubrid_endpoint": endpoint,

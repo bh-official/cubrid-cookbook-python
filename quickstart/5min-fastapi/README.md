@@ -195,7 +195,7 @@ venv is the `.venv` folder; delete it with `rm -rf .venv`.
 
 **Port 33000 is shared.** This quickstart, the
 [SQLAlchemy quickstart](../5min-sqlalchemy/README.md) and the repository's root
-lab (the `cubrid-cookbook` container) all publish their database on
+lab (the `cubrid` service of the root `docker-compose.yml`) all publish their database on
 `127.0.0.1:33000`. Each is a separate Compose project with its own data, so
 only one can run at a time. Before you switch, run `docker compose stop` in the
 folder of the one you are leaving.
@@ -229,6 +229,18 @@ folder of the one you are leaving.
 - **A database or login error**: the app connects to the database `testdb` as
   `dba` with an empty password, the settings this Compose file creates. Another
   CUBRID server on port 33000 has different ones; stop it as described above.
+- **`-353 Failed to connect to database server` after you update from an
+  earlier Compose file:** that file registered the database for the host
+  `cubrid-fastapi`, and the database in your volumes still names it. The data
+  is kept; point it at `localhost` and restart. Do not run `docker compose down -v`, which
+  deletes it.
+
+  ```bash
+  docker compose up -d cubrid
+  docker compose exec -T -u cubrid cubrid sh -c 'sed -i -E "s/^(testdb[[:space:]]+[^[:space:]]+[[:space:]]+)[^[:space:]]+/\1localhost/" "$CUBRID_DATABASES/databases.txt"'
+  docker compose restart cubrid
+  docker compose up -d --wait
+  ```
 
 More fixes: the [CUBRID quirks and pitfalls](../../pitfalls/README.md) and the
 [known issues](../../KNOWN_ISSUES.md).

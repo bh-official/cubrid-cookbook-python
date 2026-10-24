@@ -151,8 +151,8 @@ check that ran and `failed` fails `behavior`, however honestly the report states
 Each command entry also has `executed`, the command as really run (with the
 interpreter path and the `PYTHON=` override `make verify` gets); the committed fixtures
 show the interpreter as `python` instead of a local path. The live path needs
-Docker and the local port 33000 free, and it uses the `cubrid-cookbook` container name
-from `docker-compose.yml`: stop your own lab first. No CI job runs it.
+Docker and the local port 33000 free (an inherited `CUBRID_TEST_PORT` is dropped), and it
+probes the `cubrid` Compose service of the temporary worktree: stop your own lab first. No CI job runs it.
 
 ## Manual agent runs
 

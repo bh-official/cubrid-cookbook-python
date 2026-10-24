@@ -117,7 +117,7 @@ Done. Core and ORM CRUD completed successfully.
 `rm -rf .venv`를 실행하세요.
 
 **포트 33000은 함께 씁니다.** 이 빠른 시작, [FastAPI 빠른 시작](quickstart-fastapi.md),
-저장소 루트의 실습 환경(`cubrid-cookbook` 컨테이너)은 모두 데이터베이스를
+저장소 루트의 실습 환경(루트 `docker-compose.yml`의 `cubrid` 서비스)은 모두 데이터베이스를
 `127.0.0.1:33000`에 공개합니다. 각각 데이터가 따로인 별개의 Compose 프로젝트라서
 한 번에 하나만 실행할 수 있습니다. 다른 것으로 바꾸기 전에, 떠나는 쪽 폴더에서
 `docker compose stop`을 실행하세요.
@@ -147,6 +147,17 @@ Done. Core and ORM CRUD completed successfully.
 - **데이터베이스 오류나 로그인 오류**: 스크립트는 `testdb`에 `dba`, 빈 비밀번호로
   접속하며, 이 Compose 파일이 만드는 설정과 같습니다. 포트 33000의 다른 CUBRID
   서버는 설정이 다릅니다. 위에서 설명한 대로 멈추세요.
+- **이전 Compose 파일에서 업데이트한 뒤 `-353 Failed to connect to database server`가
+  나오면:** 이전 파일은 데이터베이스를 호스트 `cubrid-sqlalchemy`로 등록했고, 볼륨의 데이터베이스가
+  아직 그 이름을 기록하고 있습니다. 데이터는 그대로이니 `localhost`를 가리키게 하고
+  다시 시작하세요. 데이터를 지우는 `docker compose down -v`는 실행하지 마세요.
+
+  ```bash
+  docker compose up -d cubrid
+  docker compose exec -T -u cubrid cubrid sh -c 'sed -i -E "s/^(testdb[[:space:]]+[^[:space:]]+[[:space:]]+)[^[:space:]]+/\1localhost/" "$CUBRID_DATABASES/databases.txt"'
+  docker compose restart cubrid
+  docker compose up -d --wait
+  ```
 
 더 많은 해결 방법: [CUBRID 특이점과 함정](https://github.com/cubrid-lab/cubrid-cookbook-python/blob/main/pitfalls/README.md),
 [알려진 문제](https://github.com/cubrid-lab/cubrid-cookbook-python/blob/main/KNOWN_ISSUES.md).

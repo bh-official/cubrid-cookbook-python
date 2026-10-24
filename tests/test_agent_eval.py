@@ -427,9 +427,9 @@ def test_live_path_uses_make_and_always_cleans_up(
 
     def fake_bounded(argv, cwd, timeout, env=None):  # noqa: ANN001, ANN202
         calls.append((list(argv), timeout, env))
-        if argv[:2] == ["docker", "inspect"]:
+        if argv[:3] == ["docker", "compose", "ps"]:
             return 0, "cubrid/cubrid:11.4\n"
-        if argv[:2] == ["docker", "exec"]:
+        if argv[:3] == ["docker", "compose", "exec"]:
             return 0, "\nCUBRID 11.4 (11.4.0.1778) (64bit release build)\n"
         if argv[:2] == ["make", "verify"]:
             raise RuntimeError("verify crashed")
@@ -442,19 +442,24 @@ def test_live_path_uses_make_and_always_cleans_up(
         lambda argv, **kw: subprocess.CompletedProcess(argv, 0, "tier=pr\nverify_paths=x\n", ""),
     )
     monkeypatch.setenv("CUBRID_TEST_URL", "cubrid://dba:@elsewhere:33000/otherdb")
+    monkeypatch.setenv("CUBRID_TEST_PORT", "33100")
     task = ae.load_task(ISO)
     commands: list[dict[str, Any]] = []
     with pytest.raises(RuntimeError):
         ae._live(task, "", tmp_path, commands, "11.4", 5)
     argvs = [argv for argv, _, _ in calls]
     assert argvs[0] == ["make", "up", "CUBRID_VERSION=11.4"]
-    assert argvs[1][:2] == ["docker", "inspect"] and argvs[2][:2] == ["docker", "exec"]
+    # The probes address the Compose service, not a fixed container name (#436).
+    assert argvs[1] == ["docker", "compose", "ps", "--format", "{{.Image}}", "cubrid"]
+    assert argvs[2] == ["docker", "compose", "exec", "-T", "cubrid", "cubrid_rel"]
     assert argvs[3][:3] == ["make", "verify", "VERIFY_PATHS=fundamentals/isolation-levels"]
     assert argvs[3][-1] == f"PYTHON={sys.executable}"
     assert argvs[-1] == ["make", "clean"]
     # Every step, the probes included, is bounded; the suite URL is pinned to the lab.
     assert all(timeout <= 5 for _, timeout, _ in calls)
     assert all(env["CUBRID_TEST_URL"] == ae.LAB_URL for _, _, env in calls if env)
+    # LAB_URL is port 33000, so an inherited CUBRID_TEST_PORT must not move the lab.
+    assert all("CUBRID_TEST_PORT" not in env for _, _, env in calls if env)
 
     calls.clear()
 

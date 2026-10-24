@@ -106,10 +106,11 @@ OUTCOMES = ("passed", "skipped", "failed")
 # Directories whose Python files are user-facing examples (tests/ excluded).
 EXAMPLE_ROOTS = ("quickstart", "migration", "templates", "performance", "fundamentals", "pitfalls")
 PREFIX = "cookbook_"
-# The live path: the CUBRID PR CI runs on, the Compose container the Makefile
-# names, and a per-step limit so a hung server or recipe cannot stall a run.
+# The live path: the CUBRID PR CI runs on, the Compose service the Makefile starts
+# (``cubrid`` in every base SHA's docker-compose.yml; the container name is not
+# fixed since #436), and a per-step limit so a hung server or recipe cannot stall a run.
 DEFAULT_CUBRID = "11.4"
-CONTAINER = "cubrid-cookbook"
+SERVICE = "cubrid"
 LIVE_TIMEOUT = 900.0
 PROBE_TIMEOUT = 60.0
 LAB_URL = "cubrid://dba:@localhost:33000/testdb"
@@ -1145,6 +1146,9 @@ def _live(
     # Always the lab started here: an inherited URL could point the suites at another
     # server while the recorded image and version describe this one.
     env["CUBRID_TEST_URL"] = LAB_URL
+    # The recipes and LAB_URL use port 33000: an inherited CUBRID_TEST_PORT would
+    # publish the lab elsewhere (#436).
+    env.pop("CUBRID_TEST_PORT", None)
     info: dict[str, Any] = {
         "requested_cubrid_version": version,
         "selection": dict(line.split("=", 1) for line in scope.stdout.splitlines() if "=" in line),
@@ -1159,10 +1163,10 @@ def _live(
         # Bounded like every other step; a failed or stalled probe leaves it unknown.
         probe = min(timeout, PROBE_TIMEOUT)
         image_code, image = _bounded(
-            ["docker", "inspect", "--format", "{{.Config.Image}}", CONTAINER], worktree, probe, env
+            ["docker", "compose", "ps", "--format", "{{.Image}}", SERVICE], worktree, probe, env
         )
         release_code, release = _bounded(
-            ["docker", "exec", CONTAINER, "cubrid_rel"], worktree, probe, env
+            ["docker", "compose", "exec", "-T", SERVICE, "cubrid_rel"], worktree, probe, env
         )
         info["image"] = (image.strip() or None) if image_code == 0 else None
         info["server"] = (

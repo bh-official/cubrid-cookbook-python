@@ -1,5 +1,5 @@
 SHELL := /bin/bash
-.PHONY: help up down status docker-clean clean deps verify verify-goldens demo lint format-check format \
+.PHONY: help docker-up docker-down docker-clean up down status clean deps verify verify-goldens demo lint format-check format \
 	test test-offline check check-docs test-normalize check-coverage docs docs-check agent-eval-check \
 	verify-quickstart verify-performance verify-web verify-django-celery verify-ai-agent verify-dashboard verify-templates
 
@@ -31,23 +31,29 @@ help: ## Show this help, grouped by purpose
 		/^##@ / {printf "\n\033[1m%s\033[0m\n", substr($$0, 5)} \
 		/^[a-zA-Z0-9_-]+:.*?## / {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
-##@ Database (local CUBRID lab, docker-compose.yml)
+##@ Database (local CUBRID lab, docker-compose.yml service cubrid, database testdb)
 
-up: ## Start CUBRID database
+# CUBRID_VERSION selects the image (default 11.2) and CUBRID_TEST_PORT the host port
+# on 127.0.0.1 (default 33000; the examples and their goldens connect to 33000).
+docker-up: ## Start the CUBRID lab and wait until testdb answers (CUBRID_VERSION, CUBRID_TEST_PORT)
 	$(DOCKER_COMPOSE) up -d
 	@echo "Waiting for CUBRID to be ready..."
 	$(PYTHON) scripts/wait_for_cubrid.py --compose "$(DOCKER_COMPOSE)" \
 		--timeout $(UP_TIMEOUT) --probe-timeout $(UP_PROBE_TIMEOUT) --interval $(UP_INTERVAL)
 
-down: ## Stop CUBRID database (keeps its data)
+docker-down: ## Stop and remove the lab's containers and network; keeps the volumes and the database
 	$(DOCKER_COMPOSE) down
-
-status: ## Show container status
-	$(DOCKER_COMPOSE) ps
 
 docker-clean: ## DESTRUCTIVE: stop CUBRID and delete its containers and volumes, including all database data
 	$(DOCKER_COMPOSE) down -v
 	@echo "✓ Removed the CUBRID containers and volumes"
+
+up: docker-up ## Alias of make docker-up
+
+down: docker-down ## Alias of make docker-down (keeps the data)
+
+status: ## Show container status
+	$(DOCKER_COMPOSE) ps
 
 ##@ Setup and cleanup
 
@@ -64,7 +70,7 @@ deps: ## Install the drivers, pytest, pytest-asyncio and every example's require
 
 clean: ## Remove generated files, caches and test results (never Docker containers, volumes or data)
 	$(PYTHON) -B -c 'import sys; sys.path.insert(0, "scripts"); from pathlib import Path; from stage_docs import STAGE; [Path(page).unlink(missing_ok=True) for _, page in STAGE]'
-	rm -rf .live-evidence site .pytest_cache .ruff_cache
+	rm -rf .live-evidence test-results site .pytest_cache .ruff_cache
 	find . \( -path ./.git -o -path ./.venv -o -path ./venv \) -prune -o \
 		-type d \( -name __pycache__ -o -name .pytest_cache -o -name .ruff_cache \) -prune \
 		-exec rm -rf {} +
@@ -98,10 +104,10 @@ endif
 verify-goldens: check-coverage ## Compare example outputs with their goldens (VERIFY_PATHS=<dirs> scopes the search roots, a partial check; VERIFY_TIMEOUT limits each script)
 	@PYTHON="$(PYTHON)" NORMALIZE="$(NORMALIZE)" VERIFY_TIMEOUT="$(VERIFY_TIMEOUT)" bash scripts/verify_goldens.sh $(VERIFY_PATHS)
 
-verify-quickstart: ## Live lane: FastAPI quickstart /health and CRUD on the make up database
+verify-quickstart: ## Live lane: FastAPI quickstart /health and CRUD on the make docker-up database
 	$(LIVE_GATE) quickstart
 
-verify-performance: ## Live lane: 5 migration goldens + 3 benchmarks on the make up database
+verify-performance: ## Live lane: 5 migration goldens + 3 benchmarks on the make docker-up database
 	$(LIVE_GATE) performance
 
 verify-web: ## Live lane: Flask/FastAPI template suites on CUBRID_TEST_URL
@@ -119,7 +125,7 @@ verify-dashboard: ## Live lane: dashboard AppTest suite on an isolated CUBRID_DA
 verify-templates: ## Live lanes: verify-web, verify-django-celery and verify-dashboard in order
 	$(LIVE_GATE) web django-celery dashboard
 
-demo: up verify-goldens ## Demo: start DB, compare every example with its golden
+demo: docker-up verify-goldens ## Demo: start DB, compare every example with its golden
 	@echo ""
 	@echo "✓ Demo complete — all examples verified against CUBRID"
 

@@ -76,8 +76,8 @@ CUBRID_VERSION=11.4 docker compose up -d
 python scripts/wait_for_cubrid.py
 ```
 
-`docker compose up -d`는 `docker-compose.yml`대로 `cubrid-cookbook`이라는
-컨테이너를 시작하고 바로 돌아옵니다. 데이터베이스가 뜨기까지는 몇 초가 더 걸리며,
+`docker compose up -d`는 `docker-compose.yml`의 `cubrid` 서비스를 시작하고(컨테이너
+이름은 폴더 이름을 따릅니다. 예: `cubrid-cookbook-python-cubrid-1`) 바로 돌아옵니다. 데이터베이스가 뜨기까지는 몇 초가 더 걸리며,
 두 번째 명령이 그동안 기다립니다.
 
 **확인.** 마지막 줄이 다음과 같아야 합니다.
@@ -86,7 +86,7 @@ python scripts/wait_for_cubrid.py
 CUBRID is ready: the in-container csql query passed.
 ```
 
-그다음 `docker compose ps`에 `cubrid-cookbook`과 `127.0.0.1:33000->33000/tcp`가
+그다음 `docker compose ps`에 `cubrid` 서비스와 `127.0.0.1:33000->33000/tcp`가
 보여야 합니다. 데이터베이스가 응답한 뒤에도 30초 정도는 상태가
 `health: starting`으로 보일 수 있는데, 정상입니다.
 

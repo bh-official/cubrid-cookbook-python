@@ -13,7 +13,7 @@
 
 ```
 quickstart/        → 5-minute getting-started examples
-migration/         → Language migration guides (Java → Python)
+migration/         → Migration guides (Java → Python, CUBRIDdb → pycubrid)
 templates/         → Copy-and-customize production starters
 performance/       → Benchmark-backed optimization patterns
 pitfalls/          → Common anti-patterns and fixes
@@ -89,6 +89,27 @@ Apply these guardrails to every implementation tool:
 - Before merging, verify final code, branch checks and independent approval
   on protected/security-sensitive paths where the project requires it.
 
+## PR overlap and execution precedence
+
+- Before opening a PR, check the linked issue's accepted scope and
+  dependencies, other open PRs, and work merged into `main` since the branch
+  was created. Mark relevant `Supersedes #N`, `Depends on #N` or
+  `Parallel to #N` with a reason; otherwise write `None`.
+- Pick a canonical PR by behavior, focused scope, test evidence and maintainer
+  direction. Recheck before merging; neither a newer PR nor green CI overrides
+  an unmet prerequisite, incomplete golden/live evidence or a protected
+  workflow/release review.
+- In the same review cycle after merging, explain and close truly superseded
+  PRs or record why parallel work stays valid. Update linked issues and do not
+  declare parent acceptance complete merely because sub-PRs merged. Keep
+  contributor history and coordinate external work.
+- After a policy change, reconcile contradictory older instructions in active
+  issues/PRs and templates, or leave a narrow documented follow-up.
+- `priority:` records urgency, `size:` effort; actual execution order also
+  depends on readiness, verification and maintainer release decisions. Preserve
+  the already-live `make verify` contract and do not redo merged Compose work.
+  No additional automation, check or organization-level tracker is required.
+
 ## Issue specification and ownership
 
 Issues and implementation acceptance are repository-local: file work in the
@@ -141,7 +162,8 @@ not checked, so do not add foreign closing keywords there.
   changes no file); `make format` is the only target that rewrites files
 - `make test` (every offline suite, including `test-normalize`; no database or Docker;
   `make test-offline` is an alias; suite list in `scripts/run_offline_tests.py`)
-- `make up` (starts CUBRID 11.2 by default, `CUBRID_VERSION=11.4` to override, with bounded readiness checking)
+- `make docker-up` (alias `make up`; starts the Compose service `cubrid` with CUBRID 11.2 by default,
+  `CUBRID_VERSION=11.4` to override, with bounded readiness checking)
 - `make deps` (installs the drivers, pytest and every example's requirements)
 - Run the relevant example: `python <file>.py`
 - `make verify-goldens VERIFY_PATHS=<example-directory>` for matching live goldens (a partial
@@ -152,8 +174,9 @@ not checked, so do not add foreign closing keywords there.
   `CUBRID_DASHBOARD_TEST_URL` databases, see CONTRIBUTING.md "Live verification")
 - `make docs` for staged docs and strict MkDocs validation
 - `make docs-check` for links, anchors and recipe commands in every Markdown file (pinned tools: `.github/requirements-docs-check.txt`)
-- `make down` after live checks (keeps the data; `make clean` removes only generated files and
-  caches, and `make docker-clean` is the one target that deletes the lab's volumes)
+- `make docker-down` (alias `make down`) after live checks (keeps the data; `make clean` removes
+  only generated files and caches, and `make docker-clean` is the one target that deletes the
+  lab's volumes)
 
 Record executed commands/results separately from AI review and checks not run.
 Agent benchmark tasks and their offline grader live in
@@ -303,7 +326,7 @@ Do not mark work complete until code, tests, and documentation are consistent.
 ### Role
 
 cubrid-cookbook-python provides copy-and-run examples for Python developers adopting CUBRID.
-All examples must be independently runnable against CUBRID via Docker (`make up` starts
+All examples must be independently runnable against CUBRID via Docker (`make docker-up` starts
 11.2 by default). The golden-backed examples and most template suites are CI-verified on
 CUBRID 11.2 and 11.4; [`SUPPORT_MATRIX.md`](SUPPORT_MATRIX.md) lists each recipe's coverage and
 the exceptions (offline-only or not live-covered).
