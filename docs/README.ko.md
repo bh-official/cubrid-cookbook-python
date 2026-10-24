@@ -162,11 +162,17 @@ from sqlalchemy import create_engine
 engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 ```
 
-데이터베이스 기동:
+데이터베이스 시작·중지·삭제(루트 `docker-compose.yml`의 서비스 `cubrid`):
 
 ```bash
-docker compose up -d
+make docker-up      # CUBRID 시작(CUBRID_VERSION=11.4로 다른 이미지 선택), testdb가 응답할 때까지 대기
+make docker-down    # 중지; 데이터베이스는 Docker 볼륨에 남음
+make docker-clean   # 파괴적: 컨테이너와 볼륨을 데이터베이스까지 삭제
 ```
+
+`make up`과 `make down`은 `make docker-up`과 `make docker-down`의 별칭으로 남아 있습니다.
+브로커는 `127.0.0.1`에서만 대기합니다. `CUBRID_TEST_PORT`로 다른 호스트 포트에 공개할 수
+있지만 예제는 `33000`에 연결하므로, 예제를 실행할 때는 설정하지 마세요.
 
 ## 프로젝트 구조
 

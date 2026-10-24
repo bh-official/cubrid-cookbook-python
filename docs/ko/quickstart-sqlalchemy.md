@@ -117,7 +117,7 @@ Done. Core and ORM CRUD completed successfully.
 `rm -rf .venv`를 실행하세요.
 
 **포트 33000은 함께 씁니다.** 이 빠른 시작, [FastAPI 빠른 시작](quickstart-fastapi.md),
-저장소 루트의 실습 환경(`cubrid-cookbook` 컨테이너)은 모두 데이터베이스를
+저장소 루트의 실습 환경(루트 `docker-compose.yml`의 `cubrid` 서비스)은 모두 데이터베이스를
 `127.0.0.1:33000`에 공개합니다. 각각 데이터가 따로인 별개의 Compose 프로젝트라서
 한 번에 하나만 실행할 수 있습니다. 다른 것으로 바꾸기 전에, 떠나는 쪽 폴더에서
 `docker compose stop`을 실행하세요.

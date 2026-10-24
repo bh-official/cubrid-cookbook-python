@@ -325,9 +325,9 @@ been established, rather than implicitly deleting an existing database.
 
 ```bash
 # Stop the current service without deleting its data, then select a version:
-make down
-CUBRID_VERSION=11.4 make up
-# Omit CUBRID_VERSION for the default 11.2; make up uses bounded readiness probes.
+make docker-down
+CUBRID_VERSION=11.4 make docker-up
+# Omit CUBRID_VERSION for the default 11.2; make docker-up uses bounded readiness probes.
 
 # Run all tests
 # Flask recipe tests use live CUBRID when CUBRID_TEST_URL is set and fall back

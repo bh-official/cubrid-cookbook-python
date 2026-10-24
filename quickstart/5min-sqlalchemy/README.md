@@ -122,7 +122,7 @@ These commands act only on this folder's Compose project, named
 
 **Port 33000 is shared.** This quickstart, the
 [FastAPI quickstart](../5min-fastapi/README.md) and the repository's root lab
-(the `cubrid-cookbook` container) all publish their database on
+(the `cubrid` service of the root `docker-compose.yml`) all publish their database on
 `127.0.0.1:33000`. Each is a separate Compose project with its own data, so
 only one can run at a time. Before you switch, run `docker compose stop` in the
 folder of the one you are leaving.

@@ -191,7 +191,7 @@ venv는 `.venv` 폴더이며, `rm -rf .venv`로 지웁니다.
 
 **포트 33000은 함께 씁니다.** 이 빠른 시작,
 [SQLAlchemy 빠른 시작](quickstart-sqlalchemy.md), 저장소 루트의 실습 환경
-(`cubrid-cookbook` 컨테이너)은 모두 데이터베이스를 `127.0.0.1:33000`에 공개합니다.
+(루트 `docker-compose.yml`의 `cubrid` 서비스)은 모두 데이터베이스를 `127.0.0.1:33000`에 공개합니다.
 각각 데이터가 따로인 별개의 Compose 프로젝트라서 한 번에 하나만 실행할 수 있습니다.
 다른 것으로 바꾸기 전에, 떠나는 쪽 폴더에서 `docker compose stop`을 실행하세요.
 

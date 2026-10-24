@@ -22,15 +22,15 @@ class ReadinessCommandTests(unittest.TestCase):
         self.assertIn("image: cubrid/cubrid:${CUBRID_VERSION:-11.2}", compose)
         support = (ROOT / "SUPPORT_MATRIX.md").read_text(encoding="utf-8")
         instructions = support.split("## How to Test Against a Specific Version", 1)[1]
-        self.assertIn("make down", instructions)
-        self.assertIn("CUBRID_VERSION=11.4 make up", instructions)
+        self.assertIn("make docker-down", instructions)
+        self.assertIn("CUBRID_VERSION=11.4 make docker-up", instructions)
         self.assertNotIn("sleep 60", instructions)
         self.assertNotIn("docker compose down -v", instructions)
         contributing = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
-        self.assertIn("CUBRID_VERSION=11.4 make up", contributing)
+        self.assertIn("CUBRID_VERSION=11.4 make docker-up", contributing)
         self.assertIn("UP_TIMEOUT", contributing)
         makefile = (ROOT / "Makefile").read_text(encoding="utf-8")
-        down = makefile.split("\ndown:", 1)[1].split("\n\n", 1)[0]
+        down = makefile.split("\ndocker-down:", 1)[1].split("\n\n", 1)[0]
         self.assertIn("$(DOCKER_COMPOSE) down", down)
         self.assertNotIn("-v", down)
         self.assertNotIn("--volumes", down)

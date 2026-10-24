@@ -21,7 +21,7 @@ suite (recipes share module names such as ``app``, ``database`` and
   own FK-linked tables.
 
 Databases: the goldens, quickstart and performance lanes use the database the
-examples hard-code (``localhost:33000/testdb``, started by ``make up``);
+examples hard-code (``localhost:33000/testdb``, started by ``make docker-up``);
 web, django-celery and ai-agent use ``CUBRID_TEST_URL``; dashboard uses
 ``CUBRID_DASHBOARD_TEST_URL``. Both URLs must name dedicated, empty databases,
 distinct from each other and from the examples database.
@@ -64,7 +64,7 @@ GATE_ENV = "CUBRID_LIVE_GATE"
 LIVE_URL_ENV = "CUBRID_TEST_URL"
 DASHBOARD_URL_ENV = "CUBRID_DASHBOARD_TEST_URL"
 # The database every golden example, the quickstart app and the benchmarks
-# hard-code: the docker-compose.yml service that `make up` starts.
+# hard-code: the docker-compose.yml service that `make docker-up` starts.
 EXAMPLES_URL = "cubrid+pycubrid://dba@localhost:33000/testdb"
 REQUIRED_DRIVER = "cubrid+pycubrid"
 LIVE_HEADER = re.compile(r"^database: live CUBRID \(", re.MULTILINE)
@@ -298,7 +298,7 @@ def preflight(
         if not problems and database_identity(url or "") == examples:
             reasons.append(
                 f"{name} points at the examples database ({shown_url(EXAMPLES_URL)}) that "
-                "make up starts and the goldens share; use a dedicated, empty database"
+                "make docker-up starts and the goldens share; use a dedicated, empty database"
             )
     if "dashboard" in needs and not check_url(DASHBOARD_URL_ENV, dashboard_url):
         if live_url and not check_url(LIVE_URL_ENV, live_url):
@@ -595,7 +595,7 @@ def probe_servers(
         servers[mode] = {"env": env_name, "url": shown_url(url), "version": version, "error": error}
         if gate and error and mode == "examples":
             reasons.append(
-                f"the examples database ({shown_url(url)}) is unreachable: {error}; run make up"
+                f"the examples database ({shown_url(url)}) is unreachable: {error}; run make docker-up"
             )
         elif gate and error:
             reasons.append(f"{env_name} is unreachable: {error}")

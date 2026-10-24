@@ -195,7 +195,7 @@ venv is the `.venv` folder; delete it with `rm -rf .venv`.
 
 **Port 33000 is shared.** This quickstart, the
 [SQLAlchemy quickstart](../5min-sqlalchemy/README.md) and the repository's root
-lab (the `cubrid-cookbook` container) all publish their database on
+lab (the `cubrid` service of the root `docker-compose.yml`) all publish their database on
 `127.0.0.1:33000`. Each is a separate Compose project with its own data, so
 only one can run at a time. Before you switch, run `docker compose stop` in the
 folder of the one you are leaving.
