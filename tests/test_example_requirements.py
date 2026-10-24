@@ -160,5 +160,77 @@ class MainCheckTests(unittest.TestCase):
             self.assertEqual(example_requirements.main(["--check", tmp]), 0)
 
 
+class MainListingTests(unittest.TestCase):
+    @staticmethod
+    def _example(root: Path, name: str, golden: bool) -> Path:
+        directory = root / name
+        directory.mkdir()
+        if golden:
+            (directory / "expected").mkdir()
+        requirements = directory / "requirements.txt"
+        requirements.write_text("lib\n", encoding="utf-8")
+        return requirements
+
+    def _run(self, argv: list[str]) -> tuple[int, str, str]:
+        with (
+            mock.patch("sys.stdout", new_callable=io.StringIO) as stdout,
+            mock.patch("sys.stderr", new_callable=io.StringIO) as stderr,
+        ):
+            exit_code = example_requirements.main(argv)
+        return exit_code, stdout.getvalue(), stderr.getvalue()
+
+    def test_main_lists_only_golden_backed_requirements_sorted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            second = self._example(root, "b", golden=True)
+            first = self._example(root, "a", golden=True)
+            self._example(root, "c", golden=False)
+
+            exit_code, out, err = self._run([str(root)])
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(out, f"{first.as_posix()}\n{second.as_posix()}\n")
+            self.assertEqual(err, "")
+
+    def test_main_all_lists_every_example_requirements(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            golden = self._example(root, "a", golden=True)
+            plain = self._example(root, "b", golden=False)
+
+            exit_code, out, err = self._run(["--all", str(root)])
+
+            self.assertEqual(exit_code, 0)
+            self.assertEqual(out, f"{golden.as_posix()}\n{plain.as_posix()}\n")
+            self.assertEqual(err, "")
+
+    def test_main_never_walks_hidden_folders(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            visible = self._example(root, "a", golden=True)
+            self._example(root, ".hidden", golden=True)
+
+            for argv in ([str(root)], ["--all", str(root)]):
+                with self.subTest(argv=argv[:-1]):
+                    exit_code, out, err = self._run(argv)
+
+                    self.assertEqual(exit_code, 0)
+                    self.assertEqual(out, f"{visible.as_posix()}\n")
+                    self.assertNotIn(".hidden", out)
+                    self.assertEqual(err, "")
+
+    def test_main_rejects_whitespace_path_without_partial_list(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._example(root, "a", golden=True)
+            spaced = self._example(root, "sp ace", golden=True)
+
+            exit_code, out, err = self._run([str(root)])
+
+            self.assertEqual(exit_code, 1)
+            self.assertEqual(out, "")
+            self.assertEqual(err, f"Requirements path contains whitespace: {spaced.as_posix()!r}\n")
+
+
 if __name__ == "__main__":
     unittest.main()
